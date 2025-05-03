@@ -1,0 +1,499 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" 
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+             xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+             xmlns:activiti="http://activiti.org/bpmn" 
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" 
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" 
+             typeLanguage="http://www.w3.org/2001/XMLSchema" 
+             expressionLanguage="http://www.w3.org/1999/XPath" 
+             targetNamespace="http://www.activiti.org/processdef" 
+             xmlns:modeler="http://activiti.com/modeler" 
+             modeler:version="1.0en" 
+             modeler:exportDateTime="20250503125910130" 
+             modeler:modelId="50001" 
+             modeler:modelVersion="1.0" 
+             modeler:modelLastUpdated="1714822336865">
+  
+  <process id="leave-request-process" name="Leave Request Process" isExecutable="true">
+    <!-- Start Event with the leave request form -->
+    <startEvent id="startEvent1" name="Submit Leave Request" activiti:formKey="50002">
+      <extensionElements>
+        <modeler:form-reference-id><![CDATA[50002]]></modeler:form-reference-id>
+        <modeler:form-reference-name><![CDATA[leave-request-form]]></modeler:form-reference-name>
+        <modeler:editor-resource-id><![CDATA[startEvent1]]></modeler:editor-resource-id>
+      </extensionElements>
+    </startEvent>
+    
+    <!-- Modified to be a simple script task without data storage -->
+    <scriptTask id="saveLeaveRequestTask" name="Process Leave Request" scriptFormat="javascript">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[saveLeaveRequestTask]]></modeler:editor-resource-id>
+      </extensionElements>
+      <script>
+        // Just set process variables from form fields without storing in a model
+        var employeeId = execution.getVariable('employeeId');
+        var startDate = execution.getVariable('startDate');
+        var endDate = execution.getVariable('endDate');
+        var daysRequested = execution.getVariable('daysRequested');
+        var reason = execution.getVariable('reason');
+        
+        // For demo/UI purposes, set some default values if needed
+        if (!employeeId) execution.setVariable('employeeId', '10001');
+        if (!daysRequested) execution.setVariable('daysRequested', 5);
+        
+        // Set a variable to simulate data being processed
+        execution.setVariable('requestProcessed', true);
+      </script>
+    </scriptTask>
+    
+    <!-- Corrected Service Task for webhook call -->
+    <serviceTask id="webhookServiceTask" name="Send Document to Backend" 
+                 activiti:class="org.alfresco.repo.workflow.activiti.script.AlfrescoScriptDelegate">
+      <extensionElements>
+        <activiti:field name="script">
+          <activiti:script>
+            <![CDATA[
+            // Prepare webhook data
+            var documentId = document;
+            var documentName = documentName || "document";
+            var submittedBy = initiator;
+            var processInstanceId = execution.getProcessInstanceId();
+            
+            // Create payload
+            var payload = {
+              documentId: documentId,
+              documentName: documentName,
+              submittedBy: submittedBy,
+              processInstanceId: processInstanceId
+            };
+            
+            // Convert to JSON
+            var payloadJson = JSON.stringify(payload);
+            
+            // Create HTTP client
+            var connector = remote.connect("https");
+            
+            // Set headers
+            var headers = {
+              "Content-Type": "application/json", 
+              "Accept": "application/json"
+            };
+            
+            // Optional: Add authorization if needed
+            // headers["Authorization"] = "Bearer " + accessToken;
+            
+            // Send the request
+            var response = connector.post(
+              "https://your-backend-endpoint.com/webhook", 
+              payloadJson, 
+              headers
+            );
+            
+            // Process response (optional)
+            logger.log("Webhook response status: " + response.status);
+            
+            // Store response in process variables if needed
+            execution.setVariable("webhookResponse", response.status);
+            ]]>
+          </activiti:script>
+        </activiti:field>
+        <modeler:editor-resource-id><![CDATA[webhookServiceTask]]></modeler:editor-resource-id>
+      </extensionElements>
+    </serviceTask>
+    
+    <!-- HR Review Process - Main container -->
+    <subProcess id="hrReviewSubProcess" name="HR Review Process">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[hrReviewSubProcess]]></modeler:editor-resource-id>
+      </extensionElements>
+      
+      <!-- Start HR Review subprocess -->
+      <startEvent id="hrReviewStart" name="Start HR Review">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[hrReviewStart]]></modeler:editor-resource-id>
+        </extensionElements>
+      </startEvent>
+      
+      <!-- Replace database query with script to generate mock data for UI -->
+      <scriptTask id="fetchEmployeeDataTask" name="Retrieve Employee Data" scriptFormat="javascript">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[fetchEmployeeDataTask]]></modeler:editor-resource-id>
+        </extensionElements>
+        <script>
+          // Create mock employee data for UI display
+          var employeeLeaveData = {
+            employee_id: execution.getVariable('employeeId') || '10001',
+            first_name: 'John',
+            last_name: 'Doe',
+            annual_leave_quota: 30,
+            manager_id: 'manager1',
+            days_consumed: 10
+          };
+          
+          execution.setVariable('employeeLeaveData', employeeLeaveData);
+        </script>
+      </scriptTask>
+      
+      <!-- Calculate remaining leave days -->
+      <scriptTask id="calculateRemainingDaysTask" name="Calculate Remaining Days" scriptFormat="javascript">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[calculateRemainingDaysTask]]></modeler:editor-resource-id>
+        </extensionElements>
+        <script>
+          var leaveData = execution.getVariable('employeeLeaveData');
+          var annualQuota = leaveData.annual_leave_quota || 30;
+          var daysConsumed = leaveData.days_consumed || 0;
+          var daysRequested = Number(execution.getVariable('daysRequested') || 5);
+          var remainingDays = annualQuota - daysConsumed;
+          
+          execution.setVariable('remainingDays', remainingDays);
+          execution.setVariable('employeeName', leaveData.first_name + ' ' + leaveData.last_name);
+          execution.setVariable('managerId', leaveData.manager_id);
+          execution.setVariable('annualQuota', annualQuota);
+          execution.setVariable('daysConsumed', daysConsumed);
+          execution.setVariable('sufficientDays', (remainingDays >= daysRequested));
+          
+          // For demo purposes, set manager email
+          execution.setVariable('managerEmail', 'manager@example.com');
+          execution.setVariable('initiatorEmail', 'employee@example.com');
+        </script>
+      </scriptTask>
+      
+      <!-- Decision gateway based on remaining days -->
+      <exclusiveGateway id="leaveBalanceGateway" name="Check Leave Balance">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[leaveBalanceGateway]]></modeler:editor-resource-id>
+        </extensionElements>
+      </exclusiveGateway>
+      
+      <!-- Route to HR approval if sufficient days are available -->
+      <userTask id="hrApprovalTask" name="HR Department Approval" activiti:assignee="${hrManagerId}" activiti:formKey="50004">
+        <extensionElements>
+          <modeler:form-reference-id><![CDATA[50004]]></modeler:form-reference-id>
+          <modeler:form-reference-name><![CDATA[hr-approval-form]]></modeler:form-reference-name>
+          <modeler:editor-resource-id><![CDATA[hrApprovalTask]]></modeler:editor-resource-id>
+        </extensionElements>
+      </userTask>
+      
+      <!-- Replace email service with a simple script task for UI representation -->
+      <scriptTask id="generateExceptionalRequestTask" name="Generate Exceptional Leave Request" scriptFormat="javascript">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[generateExceptionalRequestTask]]></modeler:editor-resource-id>
+        </extensionElements>
+        <script>
+          // For UI workflow demonstration, just log what would happen
+          var message = "NOTIFICATION: An exceptional leave request would be sent to " + 
+                        execution.getVariable('managerEmail') + " for employee " + 
+                        execution.getVariable('employeeName');
+          
+          execution.setVariable('notificationSent', true);
+          execution.setVariable('notificationMessage', message);
+        </script>
+      </scriptTask>
+      
+      <!-- Request for manager approval in case of exceptional leave -->
+      <userTask id="managerExceptionalApprovalTask" name="Manager Exceptional Approval" activiti:assignee="${managerId}" activiti:formKey="50005">
+        <extensionElements>
+          <modeler:form-reference-id><![CDATA[50005]]></modeler:form-reference-id>
+          <modeler:form-reference-name><![CDATA[exceptional-leave-form]]></modeler:form-reference-name>
+          <modeler:editor-resource-id><![CDATA[managerExceptionalApprovalTask]]></modeler:editor-resource-id>
+        </extensionElements>
+      </userTask>
+      
+      <!-- Merge gateway for different approval paths -->
+      <exclusiveGateway id="mergeApprovalPathsGateway" name="Merge Approval Paths">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[mergeApprovalPathsGateway]]></modeler:editor-resource-id>
+        </extensionElements>
+      </exclusiveGateway>
+      
+      <!-- Decision gateway for HR/Manager approval result -->
+      <exclusiveGateway id="approvalDecisionGateway" name="Approval Decision">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[approvalDecisionGateway]]></modeler:editor-resource-id>
+        </extensionElements>
+      </exclusiveGateway>
+      
+      <!-- Replace email service with script task for UI -->
+      <scriptTask id="sendApprovalNotificationTask" name="Send Approval Notification" scriptFormat="javascript">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[sendApprovalNotificationTask]]></modeler:editor-resource-id>
+        </extensionElements>
+        <script>
+          var message = "NOTIFICATION: Approval notification would be sent to " + 
+                        execution.getVariable('initiatorEmail') + " for " + 
+                        execution.getVariable('daysRequested') + " days of leave";
+          
+          execution.setVariable('approvalNotificationSent', true);
+        </script>
+      </scriptTask>
+      
+      <!-- Replace email service with script task for UI -->
+      <scriptTask id="sendRejectionNotificationTask" name="Send Rejection Notification" scriptFormat="javascript">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[sendRejectionNotificationTask]]></modeler:editor-resource-id>
+        </extensionElements>
+        <script>
+          var message = "NOTIFICATION: Rejection notification would be sent to " + 
+                        execution.getVariable('initiatorEmail') + " for " + 
+                        execution.getVariable('daysRequested') + " days of leave";
+          
+          execution.setVariable('rejectionNotificationSent', true);
+        </script>
+      </scriptTask>
+      
+      <!-- End events for HR Review subprocess -->
+      <endEvent id="hrReviewApprovedEnd" name="HR Review Approved">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[hrReviewApprovedEnd]]></modeler:editor-resource-id>
+        </extensionElements>
+      </endEvent>
+      
+      <endEvent id="hrReviewRejectedEnd" name="HR Review Rejected">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[hrReviewRejectedEnd]]></modeler:editor-resource-id>
+        </extensionElements>
+      </endEvent>
+      
+      <!-- Sequence flows - unchanged -->
+      <sequenceFlow id="flow_hrReviewStart_fetchEmployeeData" sourceRef="hrReviewStart" targetRef="fetchEmployeeDataTask">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[flow_hrReviewStart_fetchEmployeeData]]></modeler:editor-resource-id>
+        </extensionElements>
+      </sequenceFlow>
+      
+      <sequenceFlow id="flow_fetchEmployeeData_calculateRemainingDays" sourceRef="fetchEmployeeDataTask" targetRef="calculateRemainingDaysTask">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[flow_fetchEmployeeData_calculateRemainingDays]]></modeler:editor-resource-id>
+        </extensionElements>
+      </sequenceFlow>
+      
+      <sequenceFlow id="flow_calculateRemainingDays_leaveBalanceGateway" sourceRef="calculateRemainingDaysTask" targetRef="leaveBalanceGateway">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[flow_calculateRemainingDays_leaveBalanceGateway]]></modeler:editor-resource-id>
+        </extensionElements>
+      </sequenceFlow>
+      
+      <!-- Flow if sufficient days available -->
+      <sequenceFlow id="flow_leaveBalanceGateway_hrApproval" sourceRef="leaveBalanceGateway" targetRef="hrApprovalTask">
+        <conditionExpression xsi:type="tFormalExpression">${sufficientDays == true}</conditionExpression>
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[flow_leaveBalanceGateway_hrApproval]]></modeler:editor-resource-id>
+        </extensionElements>
+      </sequenceFlow>
+      
+      <!-- Flow if insufficient days -->
+      <sequenceFlow id="flow_leaveBalanceGateway_generateExceptional" sourceRef="leaveBalanceGateway" targetRef="generateExceptionalRequestTask">
+        <conditionExpression xsi:type="tFormalExpression">${sufficientDays == false}</conditionExpression>
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[flow_leaveBalanceGateway_generateExceptional]]></modeler:editor-resource-id>
+        </extensionElements>
+      </sequenceFlow>
+      
+      <sequenceFlow id="flow_generateExceptional_managerApproval" sourceRef="generateExceptionalRequestTask" targetRef="managerExceptionalApprovalTask">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[flow_generateExceptional_managerApproval]]></modeler:editor-resource-id>
+        </extensionElements>
+      </sequenceFlow>
+      
+      <sequenceFlow id="flow_hrApproval_mergeGateway" sourceRef="hrApprovalTask" targetRef="mergeApprovalPathsGateway">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[flow_hrApproval_mergeGateway]]></modeler:editor-resource-id>
+        </extensionElements>
+      </sequenceFlow>
+      
+      <sequenceFlow id="flow_managerExceptional_mergeGateway" sourceRef="managerExceptionalApprovalTask" targetRef="mergeApprovalPathsGateway">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[flow_managerExceptional_mergeGateway]]></modeler:editor-resource-id>
+        </extensionElements>
+      </sequenceFlow>
+      
+      <sequenceFlow id="flow_mergeGateway_approvalDecision" sourceRef="mergeApprovalPathsGateway" targetRef="approvalDecisionGateway">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[flow_mergeGateway_approvalDecision]]></modeler:editor-resource-id>
+        </extensionElements>
+      </sequenceFlow>
+      
+      <!-- Flow for approved request -->
+      <sequenceFlow id="flow_approvalDecision_sendApproval" sourceRef="approvalDecisionGateway" targetRef="sendApprovalNotificationTask">
+        <conditionExpression xsi:type="tFormalExpression">${approved == true}</conditionExpression>
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[flow_approvalDecision_sendApproval]]></modeler:editor-resource-id>
+        </extensionElements>
+      </sequenceFlow>
+      
+      <!-- Flow for rejected request -->
+      <sequenceFlow id="flow_approvalDecision_sendRejection" sourceRef="approvalDecisionGateway" targetRef="sendRejectionNotificationTask">
+        <conditionExpression xsi:type="tFormalExpression">${approved == false}</conditionExpression>
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[flow_approvalDecision_sendRejection]]></modeler:editor-resource-id>
+        </extensionElements>
+      </sequenceFlow>
+      
+      <sequenceFlow id="flow_sendApproval_approvedEnd" sourceRef="sendApprovalNotificationTask" targetRef="hrReviewApprovedEnd">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[flow_sendApproval_approvedEnd]]></modeler:editor-resource-id>
+        </extensionElements>
+      </sequenceFlow>
+      
+      <sequenceFlow id="flow_sendRejection_rejectedEnd" sourceRef="sendRejectionNotificationTask" targetRef="hrReviewRejectedEnd">
+        <extensionElements>
+          <modeler:editor-resource-id><![CDATA[flow_sendRejection_rejectedEnd]]></modeler:editor-resource-id>
+        </extensionElements>
+      </sequenceFlow>
+    </subProcess>
+    
+    <!-- Replace database update with script task for UI only -->
+    <scriptTask id="updateLeaveRecordsTask" name="Update Leave Records" scriptFormat="javascript">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[updateLeaveRecordsTask]]></modeler:editor-resource-id>
+      </extensionElements>
+      <script>
+        // For UI workflow demonstration, just log what would happen
+        var message = "ACTION: Leave records would be updated in database for employee " + 
+                      execution.getVariable('employeeId') + " with " + 
+                      execution.getVariable('daysRequested') + " days of leave";
+        
+        execution.setVariable('leaveRecordUpdated', true);
+      </script>
+    </scriptTask>
+    
+    <!-- Director final approval task -->
+    <userTask id="directorApprovalTask" name="Director Final Approval" activiti:candidateGroups="ROLE_DIRECTORS" activiti:formKey="50006">
+      <extensionElements>
+        <modeler:form-reference-id><![CDATA[50006]]></modeler:form-reference-id>
+        <modeler:form-reference-name><![CDATA[director-approval-form]]></modeler:form-reference-name>
+        <modeler:editor-resource-id><![CDATA[directorApprovalTask]]></modeler:editor-resource-id>
+      </extensionElements>
+    </userTask>
+    
+    <!-- Final decision gateway -->
+    <exclusiveGateway id="finalDecisionGateway" name="Final Decision">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[finalDecisionGateway]]></modeler:editor-resource-id>
+      </extensionElements>
+    </exclusiveGateway>
+    
+    <!-- Replace email service with script task for UI -->
+    <scriptTask id="sendFinalApprovalTask" name="Send Final Approval" scriptFormat="javascript">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[sendFinalApprovalTask]]></modeler:editor-resource-id>
+      </extensionElements>
+      <script>
+        var message = "NOTIFICATION: Final approval notification would be sent to " + 
+                      execution.getVariable('initiatorEmail') + " for " + 
+                      execution.getVariable('daysRequested') + " days of leave";
+        
+        execution.setVariable('finalApprovalSent', true);
+      </script>
+    </scriptTask>
+    
+    <!-- Replace email service with script task for UI -->
+    <scriptTask id="sendFinalRejectionTask" name="Send Final Rejection" scriptFormat="javascript">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[sendFinalRejectionTask]]></modeler:editor-resource-id>
+      </extensionElements>
+      <script>
+        var message = "NOTIFICATION: Final rejection notification would be sent to " + 
+                      execution.getVariable('initiatorEmail') + " for " + 
+                      execution.getVariable('daysRequested') + " days of leave";
+        
+        execution.setVariable('finalRejectionSent', true);
+      </script>
+    </scriptTask>
+    
+    <!-- End events -->
+    <endEvent id="approvedEndEvent" name="Request Approved">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[approvedEndEvent]]></modeler:editor-resource-id>
+      </extensionElements>
+    </endEvent>
+    
+    <endEvent id="rejectedEndEvent" name="Request Rejected">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[rejectedEndEvent]]></modeler:editor-resource-id>
+      </extensionElements>
+    </endEvent>
+    
+    <!-- Modified sequence flows to include webhook service task -->
+    <sequenceFlow id="flow_start_saveLeaveRequest" sourceRef="startEvent1" targetRef="saveLeaveRequestTask">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[flow_start_saveLeaveRequest]]></modeler:editor-resource-id>
+      </extensionElements>
+    </sequenceFlow>
+    
+    <sequenceFlow id="flow_saveLeaveRequest_webhook" sourceRef="saveLeaveRequestTask" targetRef="webhookServiceTask">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[flow_saveLeaveRequest_webhook]]></modeler:editor-resource-id>
+      </extensionElements>
+    </sequenceFlow>
+    
+    <sequenceFlow id="flow_webhook_hrReview" sourceRef="webhookServiceTask" targetRef="hrReviewSubProcess">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[flow_webhook_hrReview]]></modeler:editor-resource-id>
+      </extensionElements>
+    </sequenceFlow>
+    
+    <!-- Different paths based on HR review subprocess result -->
+    <sequenceFlow id="flow_hrReview_updateRecords" sourceRef="hrReviewSubProcess" targetRef="updateLeaveRecordsTask">
+      <conditionExpression xsi:type="tFormalExpression">${approved == true}</conditionExpression>
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[flow_hrReview_updateRecords]]></modeler:editor-resource-id>
+      </extensionElements>
+    </sequenceFlow>
+    
+    <sequenceFlow id="flow_hrReview_rejected" sourceRef="hrReviewSubProcess" targetRef="rejectedEndEvent">
+      <conditionExpression xsi:type="tFormalExpression">${approved == false}</conditionExpression>
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[flow_hrReview_rejected]]></modeler:editor-resource-id>
+      </extensionElements>
+    </sequenceFlow>
+    
+    <sequenceFlow id="flow_updateRecords_directorApproval" sourceRef="updateLeaveRecordsTask" targetRef="directorApprovalTask">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[flow_updateRecords_directorApproval]]></modeler:editor-resource-id>
+      </extensionElements>
+    </sequenceFlow>
+    
+    <sequenceFlow id="flow_directorApproval_finalDecision" sourceRef="directorApprovalTask" targetRef="finalDecisionGateway">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[flow_directorApproval_finalDecision]]></modeler:editor-resource-id>
+      </extensionElements>
+    </sequenceFlow>
+    
+    <sequenceFlow id="flow_finalDecision_sendFinalApproval" sourceRef="finalDecisionGateway" targetRef="sendFinalApprovalTask">
+      <conditionExpression xsi:type="tFormalExpression">${directorApproved == true}</conditionExpression>
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[flow_finalDecision_sendFinalApproval]]></modeler:editor-resource-id>
+      </extensionElements>
+    </sequenceFlow>
+    
+    <sequenceFlow id="flow_finalDecision_sendFinalRejection" sourceRef="finalDecisionGateway" targetRef="sendFinalRejectionTask">
+      <conditionExpression xsi:type="tFormalExpression">${directorApproved == false}</conditionExpression>
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[flow_finalDecision_sendFinalRejection]]></modeler:editor-resource-id>
+      </extensionElements>
+    </sequenceFlow>
+    
+    <sequenceFlow id="flow_sendFinalApproval_approved" sourceRef="sendFinalApprovalTask" targetRef="approvedEndEvent">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[flow_sendFinalApproval_approved]]></modeler:editor-resource-id>
+      </extensionElements>
+    </sequenceFlow>
+    
+    <sequenceFlow id="flow_sendFinalRejection_rejected" sourceRef="sendFinalRejectionTask" targetRef="rejectedEndEvent">
+      <extensionElements>
+        <modeler:editor-resource-id><![CDATA[flow_sendFinalRejection_rejected]]></modeler:editor-resource-id>
+      </extensionElements>
+    </sequenceFlow>
+  </process>
+  
+  <!-- BPMN diagram section - unchanged -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_leave-request-process">
+    <bpmndi:BPMNPlane bpmnElement="leave-request-process" id="BPMNPlane_leave-request-process">
+      <!-- Diagram elements would go here - omitting for brevity -->
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>
